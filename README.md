@@ -1,27 +1,30 @@
 # VTT to Markdown Converter
 
-A PowerShell-based toolkit for converting VTT (Video Text Track) files to well-formatted Markdown documents with YAML front matter.
+A streamlined PowerShell toolkit for converting VTT (Video Text Track) files to well-formatted Markdown documents with YAML front matter. This tool transforms subtitle/transcript files into structured documentation optimized for knowledge management workflows.
 
-## Overview
-
-This repository contains PowerShell scripts that convert VTT subtitle/transcript files into structured Markdown documents. The converted files include metadata, proper speaker formatting, and are optimized for documentation workflows.
-
-## Features
+## 🚀 Features
 
 - **Single File Conversion**: Convert individual VTT files to Markdown
-- **Batch Processing**: Convert multiple VTT files at once
-- **Speaker Anonymization**: Option to anonymize speaker names for privacy
-- **YAML Front Matter**: Automatic generation of metadata headers
-- **Flexible Output**: Customizable output directories and file naming
-- **Keyword Generation**: Automatic keyword extraction from context
+- **Batch Processing**: Process entire directories of VTT files automatically
+- **Speaker Anonymization**: Privacy-focused options to anonymize speaker names
+- **YAML Front Matter**: Automatic generation of metadata headers for static site generators
+- **Flexible Output**: Customizable output directories and file naming conventions
+- **Keyword Generation**: Automatic keyword extraction from file context
+- **Privacy-First Design**: Data isolation with local-only transcript storage
 
-## Scripts
+## 📋 Prerequisites
+
+- Windows PowerShell 5.1 or PowerShell Core 6+
+- Read/write access to source and output directories
+- VTT files from meeting recordings, webinars, or video content
+
+## 🔧 Scripts
 
 ### `convert-vtt-to-markdown.ps1`
 
-Converts a single VTT file to Markdown format with YAML front matter.
+Converts a single VTT file to Markdown format with YAML front matter and optional speaker anonymization.
 
-#### Usage
+#### 📖 Usage
 ```powershell
 # Basic conversion
 .\convert-vtt-to-markdown.ps1 -VttFile "meeting.vtt"
@@ -36,12 +39,15 @@ Converts a single VTT file to Markdown format with YAML front matter.
 .\convert-vtt-to-markdown.ps1 -VttFile "meeting.vtt" -AnonymizeNames -UseParticipantIDs
 ```
 
-#### Parameters
-- `-VttFile`: Path to the VTT file to convert (required)
-- `-OutputDir`: Output directory for the markdown file (optional)
-- `-Title`: Custom title for the document (optional, auto-generated if not provided)
-- `-AnonymizeNames`: Replace speaker names with initials for privacy
-- `-UseParticipantIDs`: Use P1, P2, P3 format instead of initials (requires -AnonymizeNames)
+#### 📊 Parameters
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `VttFile` | String | Yes | - | Path to the VTT file to convert |
+| `OutputDir` | String | No | Same as input | Output directory for the markdown file |
+| `Title` | String | No | Auto-generated | Custom title for the document |
+| `AnonymizeNames` | Switch | No | `false` | Replace speaker names with initials for privacy |
+| `UseParticipantIDs` | Switch | No | `false` | Use P1, P2, P3 format instead of initials (requires -AnonymizeNames) |
 
 ### `batch-convert-vtt.ps1`
 
