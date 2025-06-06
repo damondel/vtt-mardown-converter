@@ -1,0 +1,37 @@
+﻿# VTT Library - PowerShell Scripts Only
+# Exclude all data files and outputs
+
+# Data directories
+data/
+output/
+transcripts/
+markdown-output/
+processed/
+temp/
+cache/
+
+# VTT and Markdown files (except README)
+*.vtt
+*.md
+!README.md
+
+# Generated files
+*.log
+*.tmp
+*.cache
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor files
+.vscode/
+.vs/
+*.swp
+*.swo
+
+# Environment files
+.env
+.env.*
+*.env
