@@ -1,174 +1,109 @@
-# Batch VTT to Markdown Converter
-# documentId: script-batch-convert-vtt-content-processing
-# Usage: .\batch-convert-vtt.ps1 [-SourceDir "path\to\vtt\files"] [-OutputDir "path\to\output"] [-Filter "*.vtt"] [-AnonymizeNames] [-UseParticipantIDs]
+# Final Batch VTT to Markdown Converter
+# Usage: .\batch-convert-vtt-final.ps1 [-SourceDir "path"] [-OutputDir "path"] [-Recursive] [-NoAnonymization]
 
 param(
-    [Parameter(Mandatory=$false, HelpMessage="Directory containing VTT files")]
-    [string]$SourceDir,
-    
-    [Parameter(Mandatory=$false, HelpMessage="Output directory for markdown files")]
-    [string]$OutputDir,
-    
-    [Parameter(Mandatory=$false, HelpMessage="File filter pattern")]
-    [string]$Filter = "*.vtt",
-    
-    [Parameter(Mandatory=$false, HelpMessage="Process subdirectories recursively")]
+    [string]$SourceDir = "c:\Users\damondel\dev\data\transcripts",
+    [string]$OutputDir = "c:\Users\damondel\dev\data\markdown-output",
     [switch]$Recursive,
-    
-    [Parameter(Mandatory=$false, HelpMessage="Anonymize speaker names (replace with initials/IDs)")]
-    [switch]$AnonymizeNames,
-    
-    [Parameter(Mandatory=$false, HelpMessage="Use simple participant IDs (P1, P2, etc.) instead of initials")]
-    [switch]$UseParticipantIDs
+    [switch]$NoAnonymization
 )
 
-# Get script directory
-$scriptPath = Split-Path -Parent $PSCommandPath
-$converterScript = Join-Path $scriptPath "convert-vtt-to-markdown.ps1"
-
-# Check if the converter script exists
-if (-not (Test-Path $converterScript)) {
-    Write-Error "Converter script not found: $converterScript"
-    Write-Host "Please ensure convert-vtt-to-markdown.ps1 is in the same directory."
-    exit 1
-}
-
-# Set default source directory
-if (-not $SourceDir) {
-    $scriptRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
-    $SourceDir = Join-Path $scriptRoot "data\transcripts"
-}
-
-# Set default output directory
-if (-not $OutputDir) {
-    $scriptRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
-    $OutputDir = Join-Path $scriptRoot "data\markdown-output"
-}
-
-# Validate source directory
-if (-not (Test-Path $SourceDir)) {
-    Write-Error "Source directory not found: $SourceDir"
-    exit 1
-}
-
 Write-Host "=== Batch VTT to Markdown Converter ===" -ForegroundColor Cyan
-Write-Host "Source Directory: $SourceDir"
-Write-Host "Output Directory: $OutputDir"
-Write-Host "Filter: $Filter"
-Write-Host "Recursive: $Recursive"
-if ($AnonymizeNames) {
-    Write-Host "Anonymization: Enabled" -ForegroundColor Yellow
-    if ($UseParticipantIDs) {
-        Write-Host "Format: Participant IDs (P1, P2, etc.)" -ForegroundColor Yellow
-    } else {
-        Write-Host "Format: Initials" -ForegroundColor Yellow
-    }
+Write-Host "Source: $SourceDir" -ForegroundColor White
+Write-Host "Output: $OutputDir" -ForegroundColor White
+Write-Host "Recursive: $Recursive" -ForegroundColor White
+
+if ($NoAnonymization) {
+    Write-Host "Anonymization: Disabled (showing real names)" -ForegroundColor Yellow
 } else {
-    Write-Host "Anonymization: Disabled"
+    Write-Host "Anonymization: Enabled (using participant IDs P1, P2, etc.)" -ForegroundColor Green
 }
-Write-Host "=======================================`n" -ForegroundColor Cyan
+
+Write-Host "===========================================" -ForegroundColor Cyan
+Write-Host ""
+
+# Get converter script path
+$converterScript = Join-Path $PSScriptRoot "convert-vtt-to-markdown.ps1"
+
+# Validate paths
+if (-not (Test-Path $converterScript)) {
+    Write-Host "ERROR: Converter script not found: $converterScript" -ForegroundColor Red
+    exit 1
+}
+
+if (-not (Test-Path $SourceDir)) {
+    Write-Host "ERROR: Source directory not found: $SourceDir" -ForegroundColor Red
+    exit 1
+}
+
+# Ensure output directory exists
+if (-not (Test-Path $OutputDir)) {
+    New-Item -ItemType Directory -Path $OutputDir -Force | Out-Null
+    Write-Host "Created output directory: $OutputDir" -ForegroundColor Gray
+}
 
 # Find VTT files
-$searchParams = @{
-    Path = $SourceDir
-    Filter = $Filter
-}
-
+Write-Host "Searching for VTT files..." -ForegroundColor White
 if ($Recursive) {
-    $searchParams.Recurse = $true
+    $vttFiles = Get-ChildItem -Path $SourceDir -Filter "*.vtt" -Recurse
+} else {
+    $vttFiles = Get-ChildItem -Path $SourceDir -Filter "*.vtt"
 }
-
-$vttFiles = Get-ChildItem @searchParams | Where-Object { -not $_.PSIsContainer }
 
 if ($vttFiles.Count -eq 0) {
-    Write-Warning "No VTT files found in $SourceDir with filter $Filter"
+    Write-Host "No VTT files found in: $SourceDir" -ForegroundColor Yellow
     exit 0
 }
 
-Write-Host "Found $($vttFiles.Count) VTT file(s) to process:`n"
+Write-Host "Found $($vttFiles.Count) VTT file(s):" -ForegroundColor White
+$vttFiles | ForEach-Object { Write-Host "  - $($_.Name)" -ForegroundColor Gray }
+Write-Host ""
 
-# Process each file
-$successCount = 0
-$errorCount = 0
-$results = @()
+# Process each file using the simple approach that we know works
+$success = 0
+$failed = 0
 
 foreach ($vttFile in $vttFiles) {
     Write-Host "Processing: $($vttFile.Name)" -ForegroundColor Yellow
     
     try {
-        # Create subdirectory structure in output if processing recursively
-        $relativePath = $vttFile.DirectoryName.Substring($SourceDir.Length).TrimStart('\', '/')
-        $targetDir = if ($relativePath) { Join-Path $OutputDir $relativePath } else { $OutputDir }
-        
-        # Run the converter
-        $converterParams = @{
-            VttFile = $vttFile.FullName
-            OutputDir = $targetDir
-        }
-        
-        if ($AnonymizeNames) {
-            $converterParams.AnonymizeNames = $true
-        }
-        
-        if ($UseParticipantIDs) {
-            $converterParams.UseParticipantIDs = $true
-        }
-        
-        $result = & $converterScript @converterParams
-        
-        if ($LASTEXITCODE -eq 0) {
-            $successCount++
-            $status = "SUCCESS"
-            Write-Host "  ✓ Converted successfully" -ForegroundColor Green
+        # Use the working PowerShell approach
+        if ($NoAnonymization) {
+            & $converterScript -VttFile $vttFile.FullName -OutputDir $OutputDir -NoAnonymization
         } else {
-            $errorCount++
-            $status = "ERROR"
-            Write-Host "  ✗ Conversion failed" -ForegroundColor Red
+            & $converterScript -VttFile $vttFile.FullName -OutputDir $OutputDir
         }
         
-        $results += [PSCustomObject]@{
-            File = $vttFile.Name
-            Path = $vttFile.FullName
-            Status = $status
-            OutputDir = $targetDir
+        # Check if output file was created
+        $expectedOutput = Join-Path $OutputDir "$($vttFile.BaseName).md"
+        if (Test-Path $expectedOutput) {
+            $fileInfo = Get-Item $expectedOutput
+            Write-Host "  SUCCESS: Created $($fileInfo.Name) ($($fileInfo.Length) bytes)" -ForegroundColor Green
+            $success++
+        } else {
+            Write-Host "  FAILED: No output file created" -ForegroundColor Red
+            $failed++
         }
         
     } catch {
-        $errorCount++
-        $status = "ERROR"
-        Write-Host "  ✗ Exception: $($_.Exception.Message)" -ForegroundColor Red
-        
-        $results += [PSCustomObject]@{
-            File = $vttFile.Name
-            Path = $vttFile.FullName
-            Status = $status
-            Error = $_.Exception.Message
-        }
+        Write-Host "  ERROR: $($_.Exception.Message)" -ForegroundColor Red
+        $failed++
     }
     
     Write-Host ""
 }
 
-# Summary report
+# Summary
 Write-Host "=== Batch Conversion Summary ===" -ForegroundColor Cyan
-Write-Host "Total files processed: $($vttFiles.Count)"
-Write-Host "Successful conversions: $successCount" -ForegroundColor Green
-Write-Host "Failed conversions: $errorCount" -ForegroundColor $(if ($errorCount -gt 0) { "Red" } else { "Green" })
-Write-Host "================================`n" -ForegroundColor Cyan
+Write-Host "Total files found: $($vttFiles.Count)" -ForegroundColor White
+Write-Host "Successfully converted: $success" -ForegroundColor Green
+Write-Host "Failed conversions: $failed" -ForegroundColor $(if ($failed -gt 0) { "Red" } else { "Green" })
+Write-Host "================================" -ForegroundColor Cyan
 
-# Detailed results table
-if ($results.Count -gt 0) {
-    Write-Host "Detailed Results:" -ForegroundColor White
-    $results | Format-Table -Property File, Status, OutputDir -AutoSize
+if ($failed -eq 0) {
+    Write-Host "All conversions completed successfully!" -ForegroundColor Green
+    exit 0
+} else {
+    Write-Host "Some conversions failed. Check the output above for details." -ForegroundColor Yellow
+    exit 1
 }
-
-# List any errors
-$errors = $results | Where-Object { $_.Status -eq "ERROR" }
-if ($errors.Count -gt 0) {
-    Write-Host "Files with errors:" -ForegroundColor Red
-    foreach ($error in $errors) {
-        Write-Host "  - $($error.File): $($error.Error)" -ForegroundColor Red
-    }
-}
-
-Write-Host "Batch conversion completed." -ForegroundColor Cyan

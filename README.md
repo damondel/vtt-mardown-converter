@@ -26,8 +26,11 @@ Converts a single VTT file to Markdown format with YAML front matter and optiona
 
 #### 📖 Usage
 ```powershell
-# Basic conversion
+# Basic conversion with anonymization (default)
 .\convert-vtt-to-markdown.ps1 -VttFile "meeting.vtt"
+
+# Disable anonymization to show real names
+.\convert-vtt-to-markdown.ps1 -VttFile "meeting.vtt" -NoAnonymization
 
 # Custom output directory and title
 .\convert-vtt-to-markdown.ps1 -VttFile "meeting.vtt" -OutputDir "output" -Title "Team Meeting"

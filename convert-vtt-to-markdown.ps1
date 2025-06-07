@@ -1,16 +1,16 @@
 # filepath: convert-vtt-to-markdown.ps1
 # Generalized script to convert any VTT file to Markdown with YAML front matter
 # documentId: script-convert-vtt-to-markdown-content-processing
-# Usage: .\convert-vtt-to-markdown.ps1 -VttFile "path\to\file.vtt" [-OutputDir "path\to\output"] [-Title "Custom Title"] [-AnonymizeNames] [-UseParticipantIDs]
+# Usage: .\convert-vtt-to-markdown.ps1 -VttFile "path\to\file.vtt" [-OutputDir "path\to\output"] [-Title "Custom Title"] [-NoAnonymization]
 #
-# Anonymization Options:
-# -AnonymizeNames: Replace speaker names with initials or participant IDs for privacy
-# -UseParticipantIDs: Use P1, P2, P3 format instead of initials (requires -AnonymizeNames)
+# Anonymization Options (enabled by default):
+# -AnonymizeNames: Replace speaker names with initials or participant IDs for privacy (DEFAULT: enabled)
+# -UseParticipantIDs: Use P1, P2, P3 format instead of initials (DEFAULT: enabled)
+# -NoAnonymization: Disable anonymization to show real speaker names
 #
 # Examples:
-# .\convert-vtt-to-markdown.ps1 -VttFile "meeting.vtt"
-# .\convert-vtt-to-markdown.ps1 -VttFile "meeting.vtt" -AnonymizeNames
-# .\convert-vtt-to-markdown.ps1 -VttFile "meeting.vtt" -AnonymizeNames -UseParticipantIDs
+# .\convert-vtt-to-markdown.ps1 -VttFile "meeting.vtt"                    # Uses anonymization with participant IDs
+# .\convert-vtt-to-markdown.ps1 -VttFile "meeting.vtt" -NoAnonymization  # Shows real speaker names
 
 param(
     [Parameter(Mandatory=$true, HelpMessage="Path to the VTT file to convert")]
@@ -27,12 +27,14 @@ param(
     
     [Parameter(Mandatory=$false, HelpMessage="Meeting type/category")]
     [string]$MeetingType = "meeting_transcript",
-    
-    [Parameter(Mandatory=$false, HelpMessage="Anonymize speaker names (replace with initials/IDs)")]
-    [switch]$AnonymizeNames,
+      [Parameter(Mandatory=$false, HelpMessage="Anonymize speaker names (replace with initials/IDs) - enabled by default")]
+    [switch]$AnonymizeNames = $true,
     
     [Parameter(Mandatory=$false, HelpMessage="Use simple participant IDs (P1, P2, etc.) instead of initials")]
-    [switch]$UseParticipantIDs
+    [switch]$UseParticipantIDs = $true,
+    
+    [Parameter(Mandatory=$false, HelpMessage="Disable anonymization to show real speaker names")]
+    [switch]$NoAnonymization
 )
 
 # Function to generate title from filename
@@ -207,13 +209,12 @@ foreach ($line in $lines) {
     if ($cleanedLine -match "<v\s+([^>]+)>(.*)") {
         $originalSpeaker = $matches[1].Trim()
         $text = $matches[2].Trim()
-        
-        # Clean the text of remaining tags
+          # Clean the text of remaining tags
         $text = $text -replace '<\/v>', ''
         $text = $text -replace '<[^>]*>', ''
         
         # Get the speaker name (anonymized or original)
-        if ($AnonymizeNames) {
+        if ($AnonymizeNames -and -not $NoAnonymization) {
             $speaker = Get-AnonymizedSpeakerName -originalName $originalSpeaker -speakerMapping $speakerMapping -useParticipantIDs $UseParticipantIDs
         } else {
             $speaker = $originalSpeaker
@@ -231,11 +232,7 @@ foreach ($line in $lines) {
         
         $currentSpeaker = $speaker
         $currentText += "$text "
-        $inDialogue = $true
-    } else {
-        # Now clean all remaining tags for non-speaker lines
-        $cleanedLine = $cleanedLine -replace '<\/v>', ''
-        $cleanedLine = $cleanedLine -replace '<[^>]*>', ''    } else {
+        $inDialogue = $true    } else {
         # Now clean all remaining tags for non-speaker lines
         $cleanedLine = $cleanedLine -replace '<\/v>', ''
         $cleanedLine = $cleanedLine -replace '<[^>]*>', ''
@@ -255,9 +252,8 @@ foreach ($line in $lines) {
             if ($cleanedLine -match "^([A-Za-z\s]+):\s*(.*)") {
                 $originalSpeaker = $matches[1].Trim()
                 $text = $matches[2].Trim()
-                
-                # Get the speaker name (anonymized or original)
-                if ($AnonymizeNames) {
+                  # Get the speaker name (anonymized or original)
+                if ($AnonymizeNames -and -not $NoAnonymization) {
                     $speaker = Get-AnonymizedSpeakerName -originalName $originalSpeaker -speakerMapping $speakerMapping -useParticipantIDs $UseParticipantIDs
                 } else {
                     $speaker = $originalSpeaker
@@ -288,7 +284,7 @@ if ($speakersList.Count -gt 0) {
     # Add a participants list
     $participantsMarkdown = "## Participants`n`n"
     
-    if ($AnonymizeNames -and $speakerMapping.Count -gt 0) {
+    if ($AnonymizeNames -and -not $NoAnonymization -and $speakerMapping.Count -gt 0) {
         # Show anonymized names with original mapping
         foreach ($speaker in $speakersList.Keys | Sort-Object) {
             $participantsMarkdown += "- **$speaker**"
@@ -348,7 +344,7 @@ Write-Host "Output: $mdOutputPath"
 Write-Host "Title:  $Title"
 Write-Host "Type:   $MeetingType"
 Write-Host "Speakers: $($speakersList.Count)"
-if ($AnonymizeNames) {
+if ($AnonymizeNames -and -not $NoAnonymization) {
     Write-Host "Anonymization: Enabled ($($speakerMapping.Count) speakers anonymized)"
     if ($UseParticipantIDs) {
         Write-Host "Format: Participant IDs (P1, P2, etc.)"
