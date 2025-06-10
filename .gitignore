@@ -11,6 +11,11 @@ output/
 *.log
 *.tmp
 *.cache
+*.profiler
+
+# Performance monitoring
+performance-*.log
+memory-usage.txt
 
 # OS files
 .DS_Store
