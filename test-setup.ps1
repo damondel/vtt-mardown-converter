@@ -10,9 +10,9 @@ $version = $PSVersionTable.PSVersion
 Write-Host "PowerShell Version: $version"
 
 if ($version.Major -ge 5) {
-    Write-Host "✓ PowerShell version is compatible" -ForegroundColor Green
+    Write-Host "[OK] PowerShell version is compatible" -ForegroundColor Green
 } else {
-    Write-Host "✗ PowerShell version too old. Requires 5.1 or later." -ForegroundColor Red
+    Write-Host "[ERROR] PowerShell version too old. Requires 5.1 or later." -ForegroundColor Red
     exit 1
 }
 
@@ -22,11 +22,11 @@ $policy = Get-ExecutionPolicy
 Write-Host "Current policy: $policy"
 
 if ($policy -eq "Restricted") {
-    Write-Host "✗ Execution policy is too restrictive" -ForegroundColor Red
+    Write-Host "[ERROR] Execution policy is too restrictive" -ForegroundColor Red
     Write-Host "Run this command as Administrator to fix:" -ForegroundColor Yellow
     Write-Host "Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser"
 } else {
-    Write-Host "✓ Execution policy allows script execution" -ForegroundColor Green
+    Write-Host "[OK] Execution policy allows script execution" -ForegroundColor Green
 }
 
 # Test script files
@@ -42,9 +42,9 @@ $allFilesFound = $true
 foreach ($file in $requiredFiles) {
     $filePath = Join-Path $scriptPath $file
     if (Test-Path $filePath) {
-        Write-Host "✓ Found: $file" -ForegroundColor Green
+        Write-Host "[OK] Found: $file" -ForegroundColor Green
     } else {
-        Write-Host "✗ Missing: $file" -ForegroundColor Red
+        Write-Host "[ERROR] Missing: $file" -ForegroundColor Red
         $allFilesFound = $false
     }
 }
@@ -69,35 +69,32 @@ try {
     if (-not (Test-Path $testDir)) {
         New-Item -ItemType Directory -Path $testDir -Force | Out-Null
     }
-    
-    $sampleVtt | Out-File -FilePath $testVttPath -Encoding UTF8
-    Write-Host "✓ Created sample VTT file" -ForegroundColor Green
+      $sampleVtt | Out-File -FilePath $testVttPath -Encoding UTF8
+    Write-Host "[OK] Created sample VTT file" -ForegroundColor Green
     
     # Test conversion
     $converterScript = Join-Path $scriptPath "convert-vtt-to-markdown.ps1"
     & $converterScript -VttFile $testVttPath -OutputDir $testOutputDir
     
     # Check if output was created
-    $expectedOutput = Join-Path $testOutputDir "sample-meeting.md"
-    if (Test-Path $expectedOutput) {
-        Write-Host "✓ Successfully converted sample VTT to Markdown" -ForegroundColor Green
+    $expectedOutput = Join-Path $testOutputDir "sample-meeting.md"    if (Test-Path $expectedOutput) {
+        Write-Host "[OK] Successfully converted sample VTT to Markdown" -ForegroundColor Green
         
         # Show sample output
         Write-Host "`nSample output preview:" -ForegroundColor White
         $content = Get-Content $expectedOutput -Head 10
         $content | ForEach-Object { Write-Host "  $_" -ForegroundColor Gray }
-        
-    } else {
-        Write-Host "✗ Conversion failed - no output file created" -ForegroundColor Red
+          } else {
+        Write-Host "[ERROR] Conversion failed - no output file created" -ForegroundColor Red
     }
     
 } catch {
-    Write-Host "✗ Test conversion failed: $($_.Exception.Message)" -ForegroundColor Red
+    Write-Host "[ERROR] Test conversion failed: $($_.Exception.Message)" -ForegroundColor Red
 } finally {
     # Clean up test files
     if (Test-Path $testDir) {
         Remove-Item -Path $testDir -Recurse -Force -ErrorAction SilentlyContinue
-        Write-Host "✓ Cleaned up test files" -ForegroundColor Green
+        Write-Host "[OK] Cleaned up test files" -ForegroundColor Green
     }
 }
 
