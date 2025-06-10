@@ -27,7 +27,16 @@ param(
     
     [Parameter(Mandatory=$false, HelpMessage="Meeting type/category")]
     [string]$MeetingType = "meeting_transcript",
-      [Parameter(Mandatory=$false, HelpMessage="Anonymize speaker names (replace with initials/IDs) - enabled by default")]
+    
+    [Parameter(Mandatory=$false, HelpMessage="Unique document identifier for linking")]
+    [string]$DocumentId,
+    
+    [Parameter(Mandatory=$false, HelpMessage="Comma-separated list of related document IDs")]
+    [string]$RelatedDocuments,
+      [Parameter(Mandatory=$false, HelpMessage="JSON object with document link types and IDs (e.g. '{`"notes`":`"doc-123`",`"slides`":`"doc-456`"}'")]
+    [string]$DocumentLinks,
+      
+    [Parameter(Mandatory=$false, HelpMessage="Anonymize speaker names (replace with initials/IDs) - enabled by default")]
     [switch]$AnonymizeNames = $true,
     
     [Parameter(Mandatory=$false, HelpMessage="Use simple participant IDs (P1, P2, etc.) instead of initials")]
@@ -64,13 +73,20 @@ function Get-TitleFromFilename {
     param([string]$filename)
     
     $baseName = [System.IO.Path]::GetFileNameWithoutExtension($filename)
-    
-    # Convert common patterns to readable titles
+      # Convert common patterns to readable titles
     $title = $baseName -replace "_", " " -replace "-", " "
-    $title = $title -replace "([a-z])([A-Z])", '$1 $2'  # camelCase to spaced
-    $title = (Get-Culture).TextInfo.ToTitleCase($title.ToLower())
+    # Fixed: removed problematic regex that was splitting every character
     
-    return $title
+    # Split into words, capitalize each word, and join properly
+    $words = $title -split '\s+' | Where-Object { $_.Length -gt 0 }
+    $capitalizedWords = $words | ForEach-Object { 
+        if ($_.Length -gt 1) {
+            $_.Substring(0,1).ToUpper() + $_.Substring(1).ToLower()
+        } else {
+            $_.ToUpper()
+        }
+    }
+      return $capitalizedWords -join " "
 }
 
 # Function to generate keywords from filename and path
@@ -98,6 +114,40 @@ function Get-KeywordsFromContext {
     
     # Remove duplicates and return
     return ($keywords | Select-Object -Unique) -join ", "
+}
+
+# Function to generate a document ID based on filename and date
+function Get-DocumentIdFromContext {
+    param([string]$filepath, [string]$customId)
+    
+    # If custom ID is provided, use it
+    if ($customId -and $customId.Trim() -ne "") {
+        return $customId.Trim()
+    }
+    
+    # Generate ID from filename and date
+    $filename = [System.IO.Path]::GetFileNameWithoutExtension($filepath)
+    $cleanName = $filename -replace '[^a-zA-Z0-9\-_]', '-' -replace '-+', '-'
+    $dateStamp = Get-Date -Format "yyyyMMdd"
+    
+    return "transcript-$cleanName-$dateStamp"
+}
+
+# Function to parse and validate document links JSON
+function Get-DocumentLinksFromJson {
+    param([string]$jsonString)
+    
+    if (-not $jsonString -or $jsonString.Trim() -eq "") {
+        return $null
+    }
+    
+    try {
+        $links = $jsonString | ConvertFrom-Json
+        return $links
+    } catch {
+        Write-Warning "Invalid JSON format for DocumentLinks: $jsonString"
+        return $null
+    }
 }
 
 # Function to get anonymized speaker name
@@ -180,30 +230,44 @@ if (-not $Keywords) {
 # Get current date for metadata
 $currentDate = Get-Date -Format "yyyy-MM-dd"
 
-# Read the VTT file
+# Generate document ID if not provided
+$documentId = Get-DocumentIdFromContext -filepath $VttFile -customId $DocumentId
+
+# Process related documents
+$relatedDocsList = @()
+if ($RelatedDocuments -and $RelatedDocuments.Trim() -ne "") {
+    $relatedDocsList = ($RelatedDocuments -split ',') | ForEach-Object { $_.Trim() } | Where-Object { $_ -ne "" }
+}
+
+# Process document links
+$documentLinksObj = Get-DocumentLinksFromJson -jsonString $DocumentLinks
+
+# Read the VTT file with memory optimization
 try {
-    $content = Get-Content -Path $VttFile -Raw -Encoding UTF8
+    Write-Host "Reading VTT file..." -ForegroundColor Gray
+    
+    # For large files, read in chunks to reduce memory usage
+    $fileInfo = Get-Item -Path $VttFile
+    $fileSizeMB = [math]::Round($fileInfo.Length / 1MB, 2)
+    Write-Host "File size: $fileSizeMB MB" -ForegroundColor Gray
+    
+    if ($fileInfo.Length -gt 50MB) {
+        Write-Host "Large file detected. Using optimized reading..." -ForegroundColor Yellow
+        # For very large files, read line by line
+        $lines = Get-Content -Path $VttFile -Encoding UTF8
+    } else {
+        # For smaller files, use the existing approach but with cleanup
+        $content = Get-Content -Path $VttFile -Raw -Encoding UTF8
+        $lines = $content -split "`r`n|`n"
+        
+        # Clear the raw content from memory immediately
+        $content = $null
+        [System.GC]::Collect()
+    }
 } catch {
     Write-Error "Failed to read VTT file: $_"
     exit 1
 }
-
-# Process the content
-$lines = $content -split "`r`n|`n"
-
-# Start building markdown with YAML front matter
-$markdown = "---`n"
-$markdown += "title: `"$Title`"`n"
-$markdown += "date: `"$currentDate`"`n"
-$markdown += "type: `"$MeetingType`"`n"
-$markdown += "keywords: `"$Keywords`"`n"
-$markdown += "source_file: `"$(Split-Path -Leaf $VttFile)`"`n"
-$markdown += "---`n`n"
-
-$markdown += "# $Title`n`n"
-
-# Add a note about the transcript
-$markdown += "> This is an automatically generated transcript that may contain minor inaccuracies.`n`n"
 
 # Initialize processing variables
 $currentSpeaker = ""
@@ -211,27 +275,71 @@ $currentText = ""
 $inDialogue = $false
 $speakersList = @{}
 $speakerMapping = @{}  # For anonymization mapping
+$processedLines = 0
+$totalLines = $lines.Count
 
-Write-Host "Processing transcript content..."
+Write-Host "Processing transcript content..." -ForegroundColor White
+Write-Host "Total lines to process: $totalLines" -ForegroundColor Gray
 
-# Process the transcript
+# Use StringBuilder for efficient string concatenation
+$markdownBuilder = [System.Text.StringBuilder]::new()
+$null = $markdownBuilder.AppendLine("---")
+$null = $markdownBuilder.AppendLine("title: `"$Title`"")
+$null = $markdownBuilder.AppendLine("date: `"$currentDate`"")
+$null = $markdownBuilder.AppendLine("type: `"$MeetingType`"")
+$null = $markdownBuilder.AppendLine("keywords: `"$Keywords`"")
+$null = $markdownBuilder.AppendLine("source_file: `"$(Split-Path -Leaf $VttFile)`"")
+$null = $markdownBuilder.AppendLine("document_id: `"$documentId`"")
+
+# Add related documents if specified
+if ($relatedDocsList.Count -gt 0) {
+    $relatedDocsYaml = ($relatedDocsList | ForEach-Object { "`"$_`"" }) -join ", "
+    $null = $markdownBuilder.AppendLine("related_documents: [$relatedDocsYaml]")
+}
+
+# Add document links if specified
+if ($documentLinksObj) {
+    $null = $markdownBuilder.AppendLine("document_links:")
+    $documentLinksObj.PSObject.Properties | ForEach-Object {
+        $null = $markdownBuilder.AppendLine("  $($_.Name): `"$($_.Value)`"")
+    }
+}
+
+$null = $markdownBuilder.AppendLine("---")
+$null = $markdownBuilder.AppendLine("")
+$null = $markdownBuilder.AppendLine("# $Title")
+$null = $markdownBuilder.AppendLine("")
+$null = $markdownBuilder.AppendLine("> This is an automatically generated transcript that may contain minor inaccuracies.")
+$null = $markdownBuilder.AppendLine("")
+
+# Process the transcript with progress tracking
 foreach ($line in $lines) {
-    # Skip WEBVTT header, timestamps, and empty lines
+    $processedLines++
+    
+    # Show progress every 100 lines for large files
+    if ($totalLines -gt 500 -and $processedLines % 100 -eq 0) {
+        $percentComplete = [math]::Round(($processedLines / $totalLines) * 100, 1)
+        Write-Host "Progress: $percentComplete% ($processedLines/$totalLines)" -ForegroundColor Gray
+    }
+      # Skip WEBVTT header, timestamps, empty lines, and UUID identifier lines
     if ($line -eq "WEBVTT" -or $line -eq "" -or 
         $line -match "^\d{2}:\d{2}:\d{2}\.\d{3} --> \d{2}:\d{2}:\d{2}\.\d{3}$" -or 
-        $line -match "^c?[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}" -or 
+        $line -match "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/\d+-\d+$" -or 
         $line -match "^\d{2}:\d{2}:\d{2}\.\d{3}$" -or
         $line -match "^NOTE\s" -or
         $line -match "^STYLE\s") {
         continue
-    }    # Clean up the line - remove VTT IDs and tags (but preserve speaker tags for now)
+    }
+    
+    # Clean up the line - remove VTT IDs and tags (but preserve speaker tags for now)
     $cleanedLine = $line -replace '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/\d+-\d+', ''
     
     # Check if line contains a speaker designation BEFORE cleaning other tags
     if ($cleanedLine -match "<v\s+([^>]+)>(.*)") {
         $originalSpeaker = $matches[1].Trim()
         $text = $matches[2].Trim()
-          # Clean the text of remaining tags
+          
+        # Clean the text of remaining tags
         $text = $text -replace '<\/v>', ''
         $text = $text -replace '<[^>]*>', ''
         
@@ -246,15 +354,18 @@ foreach ($line in $lines) {
         if (-not $speakersList.ContainsKey($speaker)) {
             $speakersList[$speaker] = $true
         }
-          # If we detect a new speaker, output the previous speaker's text
+          
+        # If we detect a new speaker, output the previous speaker's text
         if ($currentSpeaker -ne "" -and $currentSpeaker -ne $speaker -and $currentText -ne "") {
-            $markdown += "**${currentSpeaker}:** " + $currentText.Trim() + "`n`n"
+            $null = $markdownBuilder.AppendLine("**${currentSpeaker}:** " + $currentText.Trim())
+            $null = $markdownBuilder.AppendLine("")
             $currentText = ""
         }
         
         $currentSpeaker = $speaker
         $currentText += "$text "
-        $inDialogue = $true    } else {
+        $inDialogue = $true
+    } else {
         # Now clean all remaining tags for non-speaker lines
         $cleanedLine = $cleanedLine -replace '<\/v>', ''
         $cleanedLine = $cleanedLine -replace '<[^>]*>', ''
@@ -274,18 +385,21 @@ foreach ($line in $lines) {
             if ($cleanedLine -match "^([A-Za-z\s]+):\s*(.*)") {
                 $originalSpeaker = $matches[1].Trim()
                 $text = $matches[2].Trim()
-                  # Get the speaker name (anonymized or original)
+                  
+                # Get the speaker name (anonymized or original)
                 if ($AnonymizeNames -and -not $NoAnonymization) {
                     $speaker = Get-AnonymizedSpeakerName -originalName $originalSpeaker -speakerMapping $speakerMapping -useParticipantIDs $UseParticipantIDs
                 } else {
                     $speaker = $originalSpeaker
                 }
-                  if (-not $speakersList.ContainsKey($speaker)) {
+                  
+                if (-not $speakersList.ContainsKey($speaker)) {
                     $speakersList[$speaker] = $true
                 }
                 
                 if ($currentSpeaker -ne "" -and $currentText -ne "") {
-                    $markdown += "**${currentSpeaker}:** " + $currentText.Trim() + "`n`n"
+                    $null = $markdownBuilder.AppendLine("**${currentSpeaker}:** " + $currentText.Trim())
+                    $null = $markdownBuilder.AppendLine("")
                 }
                 
                 $currentSpeaker = $speaker
@@ -298,50 +412,65 @@ foreach ($line in $lines) {
 
 # Add the last speaker's text
 if ($currentSpeaker -ne "" -and $currentText -ne "") {
-    $markdown += "**${currentSpeaker}:** " + $currentText.Trim() + "`n`n"
+    $null = $markdownBuilder.AppendLine("**${currentSpeaker}:** " + $currentText.Trim())
+    $null = $markdownBuilder.AppendLine("")
 }
 
 # If we found speakers, add participants section and update YAML
 if ($speakersList.Count -gt 0) {
-    # Add a participants list
-    $participantsMarkdown = "## Participants`n`n"
+    # Build participants section using StringBuilder
+    $participantsBuilder = [System.Text.StringBuilder]::new()
+    $null = $participantsBuilder.AppendLine("## Participants")
+    $null = $participantsBuilder.AppendLine("")
     
     if ($AnonymizeNames -and -not $NoAnonymization -and $speakerMapping.Count -gt 0) {
         # Show anonymized names with original mapping
         foreach ($speaker in $speakersList.Keys | Sort-Object) {
-            $participantsMarkdown += "- **$speaker**"
+            $null = $participantsBuilder.Append("- **$speaker**")
             
             # Find the original name for this anonymized speaker
             $originalName = ($speakerMapping.GetEnumerator() | Where-Object { $_.Value -eq $speaker }).Key
             if ($originalName) {
-                $participantsMarkdown += " *(anonymized)*"
+                $null = $participantsBuilder.Append(" *(anonymized)*")
             }
-            $participantsMarkdown += "`n"
+            $null = $participantsBuilder.AppendLine("")
         }
         
         # Add anonymization note
-        $participantsMarkdown += "`n*Note: Speaker names have been anonymized for privacy.*`n"
+        $null = $participantsBuilder.AppendLine("")
+        $null = $participantsBuilder.AppendLine("*Note: Speaker names have been anonymized for privacy.*")
         
         # Use anonymized names in YAML metadata
         $participantsString = $speakersList.Keys -join ", "
     } else {
         # Show original names
         foreach ($speaker in $speakersList.Keys | Sort-Object) {
-            $participantsMarkdown += "- **$speaker**`n"
+            $null = $participantsBuilder.AppendLine("- **$speaker**")
         }
         $participantsString = $speakersList.Keys -join ", "
     }
     
-    $participantsMarkdown += "`n"
-    $markdown = $markdown -replace "(source_file: `"[^`"]+`"\n)", "`$1participants: `"$participantsString`"`n"
+    $null = $participantsBuilder.AppendLine("")
+    
+    # Update the markdown builder with participants info
+    $markdownContent = $markdownBuilder.ToString()
+    $markdownContent = $markdownContent -replace "(source_file: `"[^`"]+`"`n)", "`$1participants: `"$participantsString`"`n"
     
     # Insert the participants list after the introduction
-    $markdown = $markdown -replace "(# [^`n]+`n`n> This is an automatically generated transcript that may contain minor inaccuracies\.`n`n)", "`$1$participantsMarkdown"
+    $participantsSection = $participantsBuilder.ToString()
+    $markdownContent = $markdownContent -replace "(# [^`n]+`n`n> This is an automatically generated transcript that may contain minor inaccuracies\.`n`n)", "`$1$participantsSection"
     
+    $markdown = $markdownContent
     Write-Host "Found $($speakersList.Count) speakers: $($speakersList.Keys -join ', ')"
 } else {
+    $markdown = $markdownBuilder.ToString()
     Write-Host "No speakers detected in VTT file - treating as plain transcript"
 }
+
+# Clean up memory
+$markdownBuilder = $null
+$lines = $null
+[System.GC]::Collect()
 
 # Write the markdown to the output file
 try {

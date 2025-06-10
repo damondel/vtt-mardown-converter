@@ -7,6 +7,7 @@ A streamlined PowerShell toolkit for converting VTT (Video Text Track) files to 
 - **Single File Conversion**: Convert individual VTT files to Markdown
 - **Batch Processing**: Process entire directories of VTT files automatically
 - **Speaker Anonymization**: Privacy-focused options to anonymize speaker names
+- **Document Linking**: Link transcripts to related documents using unique IDs
 - **YAML Front Matter**: Automatic generation of metadata headers for static site generators
 - **Flexible Output**: Customizable output directories and file naming conventions
 - **Keyword Generation**: Automatic keyword extraction from file context
@@ -35,6 +36,9 @@ Converts a single VTT file to Markdown format with YAML front matter and optiona
 # Custom output directory and title
 .\convert-vtt-to-markdown.ps1 -VttFile "meeting.vtt" -OutputDir "output" -Title "Team Meeting"
 
+# With document linking for knowledge management
+.\convert-vtt-to-markdown.ps1 -VttFile "meeting.vtt" -DocumentId "standup-2025-q2-week24" -RelatedDocuments "agenda-001,action-items-001" -DocumentLinks '{"notes":"meeting-notes-001","slides":"presentation-slides-001"}'
+
 # Anonymize speaker names
 .\convert-vtt-to-markdown.ps1 -VttFile "meeting.vtt" -AnonymizeNames
 
@@ -49,8 +53,12 @@ Converts a single VTT file to Markdown format with YAML front matter and optiona
 | `VttFile` | String | Yes | - | Path to the VTT file to convert |
 | `OutputDir` | String | No | Same as input | Output directory for the markdown file |
 | `Title` | String | No | Auto-generated | Custom title for the document |
-| `AnonymizeNames` | Switch | No | `false` | Replace speaker names with initials for privacy |
-| `UseParticipantIDs` | Switch | No | `false` | Use P1, P2, P3 format instead of initials (requires -AnonymizeNames) |
+| `Keywords` | String | No | Auto-generated | Custom keywords for metadata |
+| `MeetingType` | String | No | "meeting_transcript" | Type classification for the document |
+| `DocumentId` | String | No | Auto-generated | Unique identifier for document linking |
+| `RelatedDocuments` | String | No | None | Comma-separated list of related document IDs |
+| `DocumentLinks` | String | No | None | JSON object with link types and document IDs |
+| `AnonymizeNames` | Switch | No | True | Enable speaker name anonymization |
 
 ### `batch-convert-vtt.ps1`
 
