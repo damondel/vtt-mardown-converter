@@ -37,6 +37,28 @@ param(
     [switch]$NoAnonymization
 )
 
+# Cross-platform path helper function
+function Join-PathCrossPlatform {
+    param([string[]]$Paths)
+    return [System.IO.Path]::Combine($Paths)
+}
+
+# Function to validate PowerShell version and provide guidance
+function Test-PowerShellCompatibility {
+    $version = $PSVersionTable.PSVersion
+    if ($version.Major -lt 5) {
+        Write-Warning "This script requires PowerShell 5.1 or later. Current version: $version"
+        Write-Host "Please upgrade PowerShell or use PowerShell Core 6+." -ForegroundColor Yellow
+        return $false
+    }
+    return $true
+}
+
+# Validate environment before proceeding
+if (-not (Test-PowerShellCompatibility)) {
+    exit 1
+}
+
 # Function to generate title from filename
 function Get-TitleFromFilename {
     param([string]$filename)
