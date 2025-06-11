@@ -21,7 +21,7 @@ Write-Host "Recursive: $Recursive" -ForegroundColor White
 if ($NoAnonymization) {
     Write-Host "Anonymization: Disabled (showing real names)" -ForegroundColor Yellow
 } else {
-    Write-Host "Anonymization: Enabled (using participant IDs P1, P2, etc.)" -ForegroundColor Green
+    Write-Host "Anonymization: Enabled (using initials: SM, DC, MJ, etc.)" -ForegroundColor Green
 }
 
 if ($EnableDocumentLinking) {

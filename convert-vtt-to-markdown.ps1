@@ -38,9 +38,8 @@ param(
       
     [Parameter(Mandatory=$false, HelpMessage="Anonymize speaker names (replace with initials/IDs) - enabled by default")]
     [switch]$AnonymizeNames = $true,
-    
-    [Parameter(Mandatory=$false, HelpMessage="Use simple participant IDs (P1, P2, etc.) instead of initials")]
-    [switch]$UseParticipantIDs = $true,
+      [Parameter(Mandatory=$false, HelpMessage="Use simple participant IDs (P1, P2, etc.) instead of initials")]
+    [switch]$UseParticipantIDs = $false,
     
     [Parameter(Mandatory=$false, HelpMessage="Disable anonymization to show real speaker names")]
     [switch]$NoAnonymization
@@ -164,11 +163,17 @@ function Get-AnonymizedSpeakerName {
             $participantNumber = $speakerMapping.Count + 1
             $anonymizedName = "P$participantNumber"
         } else {
-            # Use initials from the name
-            $nameParts = $originalName -split '\s+'
+            # Use initials from the name - handle names with pronouns
+            $cleanName = $originalName -replace '\s*\([^)]*\)\s*', ''  # Remove (He/Him), (She/Her), etc.
+            $nameParts = $cleanName.Trim() -split '\s+' | Where-Object { $_.Length -gt 0 }
+            
             if ($nameParts.Count -eq 1) {
-                # Single name - use first letter + number
-                $anonymizedName = $nameParts[0][0].ToString().ToUpper() + "1"
+                # Single name - use first two letters if available, otherwise first letter + X
+                if ($nameParts[0].Length -ge 2) {
+                    $anonymizedName = ($nameParts[0][0].ToString() + $nameParts[0][1].ToString()).ToUpper()
+                } else {
+                    $anonymizedName = $nameParts[0][0].ToString().ToUpper() + "X"
+                }
             } elseif ($nameParts.Count -eq 2) {
                 # First and last name - use initials
                 $anonymizedName = ($nameParts[0][0] + $nameParts[1][0]).ToString().ToUpper()
